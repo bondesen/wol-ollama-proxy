@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -9,6 +11,33 @@ import (
 	"os"
 	"time"
 )
+
+// options mirrors the Home Assistant add-on options written to /data/options.json
+type options struct {
+	GamerMac   string `json:"gamer_mac"`
+	GamerURL   string `json:"gamer_url"`
+	GamerTCP   string `json:"gamer_tcp"`
+	Broadcast  string `json:"broadcast"`
+	ListenPort int    `json:"listen_port"`
+}
+
+func loadOptions() options {
+	var o options
+	if data, err := os.ReadFile("/data/options.json"); err == nil {
+		_ = json.Unmarshal(data, &o)
+	}
+	return o
+}
+
+// pick returns the first non-empty string.
+func pick(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
 
 // sendWoL sends a Wake-on-LAN magic packet for the given MAC to a UDP address.
 func sendWoL(mac, dst string) error {
@@ -42,25 +71,25 @@ func reachable(addr string, timeout time.Duration) bool {
 	return true
 }
 
-func getenv(k, d string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
-	return d
-}
-
 func main() {
-	mac := getenv("GAMER_MAC", "50:eb:f6:1f:93:59")
-	target := getenv("GAMER_URL", "http://192.168.1.115:8080")
-	tcpAddr := getenv("GAMER_TCP", "192.168.1.115:8080")
-	broadcast := getenv("BROADCAST", "192.168.1.255:9")
-	listen := getenv("LISTEN", ":8088")
+	o := loadOptions()
+	mac := pick(o.GamerMac, os.Getenv("GAMER_MAC"), "50:eb:f6:1f:93:59")
+	target := pick(o.GamerURL, os.Getenv("GAMER_URL"), "http://192.168.1.115:8080")
+	tcpAddr := pick(o.GamerTCP, os.Getenv("GAMER_TCP"), "192.168.1.115:8080")
+	broadcast := pick(o.Broadcast, os.Getenv("BROADCAST"), "192.168.1.255:9")
+	listen := os.Getenv("LISTEN")
+	if o.ListenPort != 0 {
+		listen = fmt.Sprintf(":%d", o.ListenPort)
+	}
+	if listen == "" {
+		listen = ":8088"
+	}
 	wakeTimeout := 45 * time.Second
 	settle := 2 * time.Second
 
 	u, err := url.Parse(target)
 	if err != nil {
-		log.Fatalf("bad GAMER_URL %q: %v", target, err)
+		log.Fatalf("bad gamer_url %q: %v", target, err)
 	}
 	proxy := httputil.NewSingleHostReverseProxy(u)
 	proxy.FlushInterval = -1 // stream chunks immediately (needed for SSE / streaming chat)
@@ -84,7 +113,7 @@ func main() {
 				return
 			}
 			log.Printf("gamer awake, forwarding")
-			time.Sleep(settle) // let Ollama finish coming up
+			time.Sleep(settle)
 		}
 		proxy.ServeHTTP(w, r)
 	}

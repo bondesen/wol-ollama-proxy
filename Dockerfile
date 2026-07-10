@@ -6,9 +6,7 @@ WORKDIR /src
 COPY go.mod main.go ./
 RUN CGO_ENABLED=0 go build -o /wolproxy .
 
-# --- runtime (HA base image, has s6 + bashio) ---
+# --- runtime (plain base; binaeren laeser /data/options.json selv) ---
 FROM ${BUILD_FROM}
 COPY --from=build /wolproxy /usr/bin/wolproxy
-COPY run.sh /
-RUN chmod a+x /run.sh
-CMD [ "/run.sh" ]
+CMD [ "/usr/bin/wolproxy" ]

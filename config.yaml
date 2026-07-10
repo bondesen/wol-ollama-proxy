@@ -1,5 +1,5 @@
 name: WoL Ollama Proxy
-version: "1.0.0"
+version: "1.0.2"
 slug: wol_ollama_proxy
 description: Vækker gaming-PC'en on-demand og reverse-proxyer Ollama-forespørgsler
 arch:

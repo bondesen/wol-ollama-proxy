@@ -1,0 +1,7 @@
+# Build output
+wolproxy
+wolproxy.exe
+*.exe
+
+# OS
+.DS_Store

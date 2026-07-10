@@ -1,0 +1,23 @@
+name: WoL Ollama Proxy
+version: "1.0.0"
+slug: wol_ollama_proxy
+description: Vækker gaming-PC'en on-demand og reverse-proxyer Ollama-forespørgsler
+arch:
+  - amd64
+  - aarch64
+init: false
+host_network: true
+startup: services
+boot: auto
+options:
+  gamer_mac: "50:eb:f6:1f:93:59"
+  gamer_url: "http://192.168.1.115:8080"
+  gamer_tcp: "192.168.1.115:8080"
+  broadcast: "192.168.1.255:9"
+  listen_port: 8088
+schema:
+  gamer_mac: str
+  gamer_url: str
+  gamer_tcp: str
+  broadcast: str
+  listen_port: int

@@ -9,6 +9,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"syscall"
 	"time"
 )
 
@@ -40,6 +41,7 @@ func pick(vals ...string) string {
 }
 
 // sendWoL sends a Wake-on-LAN magic packet for the given MAC to a UDP address.
+// SO_BROADCAST must be set or the kernel rejects broadcast sends (EACCES).
 func sendWoL(mac, dst string) error {
 	hw, err := net.ParseMAC(mac)
 	if err != nil {
@@ -52,11 +54,20 @@ func sendWoL(mac, dst string) error {
 	for i := 0; i < 16; i++ {
 		packet = append(packet, hw...)
 	}
-	conn, err := net.Dial("udp", dst)
+	raddr, err := net.ResolveUDPAddr("udp4", dst)
+	if err != nil {
+		return err
+	}
+	conn, err := net.DialUDP("udp4", nil, raddr)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
+	if rc, e := conn.SyscallConn(); e == nil {
+		_ = rc.Control(func(fd uintptr) {
+			_ = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_BROADCAST, 1)
+		})
+	}
 	_, err = conn.Write(packet)
 	return err
 }
@@ -69,6 +80,15 @@ func reachable(addr string, timeout time.Duration) bool {
 	}
 	c.Close()
 	return true
+}
+
+func wake(mac, broadcast string) {
+	if err := sendWoL(mac, broadcast); err != nil {
+		log.Printf("WoL error to %s: %v", broadcast, err)
+	}
+	if err := sendWoL(mac, "255.255.255.255:9"); err != nil {
+		log.Printf("WoL error to 255.255.255.255:9: %v", err)
+	}
 }
 
 func main() {
@@ -84,7 +104,7 @@ func main() {
 	if listen == "" {
 		listen = ":8088"
 	}
-	wakeTimeout := 45 * time.Second
+	wakeTimeout := 60 * time.Second
 	settle := 2 * time.Second
 
 	u, err := url.Parse(target)
@@ -96,15 +116,14 @@ func main() {
 
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		if !reachable(tcpAddr, time.Second) {
-			log.Printf("%s %s -> gamer asleep, sending WoL to %s", r.Method, r.URL.Path, mac)
-			_ = sendWoL(mac, broadcast)
-			_ = sendWoL(mac, "255.255.255.255:9")
+			log.Printf("%s %s -> gamer asleep; sending WoL to %s (broadcast %s)", r.Method, r.URL.Path, mac, broadcast)
+			wake(mac, broadcast)
 			deadline := time.Now().Add(wakeTimeout)
 			for time.Now().Before(deadline) {
 				if reachable(tcpAddr, time.Second) {
 					break
 				}
-				_ = sendWoL(mac, broadcast)
+				wake(mac, broadcast)
 				time.Sleep(2 * time.Second)
 			}
 			if !reachable(tcpAddr, time.Second) {

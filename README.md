@@ -1,39 +1,31 @@
-# WoL Ollama Proxy — lokal Home Assistant add-on
+# WoL Ollama Proxy — lokal Home Assistant app (add-on)
 
-> 📘 **Komplet setup (add-on + HASS.Agent-kommandoer + keep-alive + oprydning): se [SETUP.md](SETUP.md).**
+> 📘 **Komplet setup: se [SETUP.md](SETUP.md).**
+>
+> ℹ️ I Home Assistant 2026.2+ hedder "Add-ons" nu **"Apps"** — samme ting. Du **kompilerer ikke Go selv**; HA gør det automatisk ved **Install**.
 
-Vækker gaming-PC'en automatisk når der kommer en Ollama-forespørgsel, og reverse-proxyer videre til gamerens metrics-proxy. Så beholder du S3-sleep + "kun magic packet" (ingen spontane opvågninger), men Copilot kan sende en prompt uden at du manuelt vækker maskinen.
+Vækker gaming-PC'en automatisk når der kommer en Ollama-forespørgsel, og reverse-proxyer videre til gamerens metrics-proxy.
 
-**Kæde:** Copilot → `HA:8088` (denne add-on) → `gamer:8080` (metrics-proxy) → Ollama `11434`. Tokens tælles stadig.
+**Kæde:** Copilot → `HA:8088` (denne app) → `gamer:8080` (metrics-proxy) → Ollama `11434`.
 
 ## Filer
 `config.yaml`, `build.yaml`, `Dockerfile`, `run.sh`, `main.go`, `go.mod`
 
-## Hurtig installation (HA add-on)
-1. Kopiér repoet til `/addons/wol_ollama_proxy/` på HA-maskinen (Samba / Studio Code Server / SSH).
-2. Indstillinger → Add-ons → Add-on Store → ⋮ → **Check for updates** → **Local add-ons** → **WoL Ollama Proxy** → **Install**.
-3. Fanen **Configuration**: tjek `gamer_mac`, `gamer_url`, `gamer_tcp`, `broadcast`, `listen_port`.
-4. **Start** + slå *Start on boot* og *Watchdog* til.
-5. Peg Copilot på `http://<HA-IP>:8088/v1`.
-
-Se **[SETUP.md](SETUP.md)** for hele opsætningen inkl. HASS.Agent-kommandoer, keep-alive og oprydning.
-
-## Byg standalone med Go
-```bash
-go build -o wolproxy .
-GAMER_MAC=50:eb:f6:1f:93:59 GAMER_URL=http://192.168.1.115:8080 GAMER_TCP=192.168.1.115:8080 BROADCAST=192.168.1.255:9 LISTEN=:8088 ./wolproxy
-```
+## Hurtig installation (HA app)
+1. Kopiér til `/addons/wol_ollama_proxy/` (`config.yaml` i roden).
+2. Indstillinger → **Apps** → **App Store** → ⋮ → **Check for updates** → F5 → **Local apps** → **WoL Ollama Proxy** → **Install** (HA kompilerer Go automatisk).
+3. Konfigurér `gamer_mac` osv. → **Start** + *Start on boot* + *Watchdog*.
+4. Peg Copilot på `http://<HA-IP>:8088/v1`.
 
 ## Miljøvariabler
-| Variabel | Standard | Beskrivelse |
-|---|---|---|
-| `GAMER_MAC` | `50:eb:f6:1f:93:59` | Gamerens MAC til WoL |
-| `GAMER_URL` | `http://192.168.1.115:8080` | Reverse-proxy mål (metrics-proxy) |
-| `GAMER_TCP` | `192.168.1.115:8080` | TCP-adresse der pinges for at se om gameren er vågen |
-| `BROADCAST` | `192.168.1.255:9` | UDP broadcast til magic packet |
-| `LISTEN` | `:8088` | Lytteport |
+| Variabel | Standard |
+|---|---|
+| `GAMER_MAC` | `50:eb:f6:1f:93:59` |
+| `GAMER_URL` | `http://192.168.1.115:8080` |
+| `GAMER_TCP` | `192.168.1.115:8080` |
+| `BROADCAST` | `192.168.1.255:9` |
+| `LISTEN` | `:8088` |
 
 ## Fejlfinding
-- **Vågner ikke:** tjek at `BROADCAST` matcher dit subnet, og at NIC'ens WoL ("kun magic packet") er slået til på gameren.
-- **504:** gameren svarede ikke i tide — se loggen; øg evt. `wakeTimeout` i `main.go`.
-- **Streaming hænger:** add-on'en flusher løbende (`FlushInterval = -1`), og gamerens patchede metrics-proxy streamer `/v1/chat/completions`.
+- **Appen dukker ikke op:** `config.yaml` skal ligge i mappens rod under `/addons/...`; kør Check for updates + F5.
+- **Vågner ikke:** tjek `BROADCAST` matcher subnettet + NIC-WoL.

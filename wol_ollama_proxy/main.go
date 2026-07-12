@@ -42,8 +42,6 @@ func pick(vals ...string) string {
 	return ""
 }
 
-// sendWoL sender en Wake-on-LAN magic packet. SO_BROADCAST SKAL saettes,
-// ellers afviser kernen broadcast-sends paa Linux.
 func sendWoL(mac, dst string) error {
 	hw, err := net.ParseMAC(mac)
 	if err != nil {
@@ -95,9 +93,6 @@ func wake(mac, broadcast string) {
 	}
 }
 
-// inspect logger hvad klienten FAKTISK sender: body-stoerrelse, model, stream-flag
-// og hvor mange tools der er vedhaeftet. Body'en afspilles igen saa proxyen kan
-// videresende den uaendret.
 func inspect(r *http.Request) {
 	if r.Body == nil {
 		return
@@ -118,16 +113,18 @@ func inspect(r *http.Request) {
 		log.Printf("DEBUG: %s %s | %d bytes | ikke-JSON body", r.Method, r.URL.Path, len(body))
 		return
 	}
-	tools := 0
 	var names []string
 	if t, ok := m["tools"].([]interface{}); ok {
-		tools = len(t)
 		for _, it := range t {
 			if tm, ok := it.(map[string]interface{}); ok {
 				if fn, ok := tm["function"].(map[string]interface{}); ok {
 					if n, ok := fn["name"].(string); ok {
 						names = append(names, n)
+						continue
 					}
+				}
+				if n, ok := tm["name"].(string); ok {
+					names = append(names, n)
 				}
 			}
 		}
@@ -136,16 +133,21 @@ func inspect(r *http.Request) {
 	if ms, ok := m["messages"].([]interface{}); ok {
 		msgs = len(ms)
 	}
-	log.Printf("DEBUG: %s %s | %d bytes | model=%v | stream=%v | messages=%d | TOOLS=%d",
-		r.Method, r.URL.Path, len(body), m["model"], m["stream"], msgs, tools)
-	if tools > 0 {
-		limit := len(names)
-		suffix := ""
-		if limit > 20 {
-			limit = 20
-			suffix = " ..."
+	ha := 0
+	for _, n := range names {
+		if strings.HasPrefix(n, "ha_") || strings.Contains(n, "home_assistant") || strings.Contains(n, "home-assistant") {
+			ha++
 		}
-		log.Printf("DEBUG: tools: %s%s", strings.Join(names[:limit], ", "), suffix)
+	}
+	log.Printf("DEBUG: %s %s | %d bytes | model=%v | stream=%v | messages=%d | TOOLS=%d | HA-TOOLS=%d",
+		r.Method, r.URL.Path, len(body), m["model"], m["stream"], msgs, len(names), ha)
+
+	for i := 0; i < len(names); i += 10 {
+		j := i + 10
+		if j > len(names) {
+			j = len(names)
+		}
+		log.Printf("DEBUG: tools[%03d-%03d]: %s", i, j-1, strings.Join(names[i:j], ", "))
 	}
 }
 

@@ -66,8 +66,12 @@ func sendWoL(mac, dst string) error {
 			_ = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_BROADCAST, 1)
 		})
 	}
-	_, err = conn.Write(packet)
-	return err
+	n, err := conn.Write(packet)
+	if err != nil {
+		return err
+	}
+	log.Printf("WoL sendt -> %s (%d bytes, mac %s)", dst, n, mac)
+	return nil
 }
 
 func reachable(addr string, timeout time.Duration) bool {
@@ -79,12 +83,13 @@ func reachable(addr string, timeout time.Duration) bool {
 	return true
 }
 
+// wake sends the magic packet to both the subnet broadcast and the limited
+// broadcast address, logging the outcome of each.
 func wake(mac, broadcast string) {
-	if err := sendWoL(mac, broadcast); err != nil {
-		log.Printf("WoL error to %s: %v", broadcast, err)
-	}
-	if err := sendWoL(mac, "255.255.255.255:9"); err != nil {
-		log.Printf("WoL error to 255.255.255.255:9: %v", err)
+	for _, dst := range []string{broadcast, "255.255.255.255:9"} {
+		if err := sendWoL(mac, dst); err != nil {
+			log.Printf("WoL FEJL -> %s: %v", dst, err)
+		}
 	}
 }
 
@@ -112,28 +117,35 @@ func main() {
 	proxy.FlushInterval = -1
 
 	handler := func(w http.ResponseWriter, r *http.Request) {
-		if !reachable(tcpAddr, time.Second) {
-			log.Printf("%s %s -> gamer asleep; sending WoL to %s (broadcast %s)", r.Method, r.URL.Path, mac, broadcast)
-			wake(mac, broadcast)
-			deadline := time.Now().Add(wakeTimeout)
-			for time.Now().Before(deadline) {
-				if reachable(tcpAddr, time.Second) {
-					break
-				}
-				wake(mac, broadcast)
-				time.Sleep(2 * time.Second)
-			}
-			if !reachable(tcpAddr, time.Second) {
-				http.Error(w, "gamer did not wake in time", http.StatusGatewayTimeout)
-				log.Printf("gamer did not wake within %s", wakeTimeout)
-				return
-			}
-			log.Printf("gamer awake, forwarding")
-			time.Sleep(settle)
+		if reachable(tcpAddr, time.Second) {
+			log.Printf("%s %s -> gamer vaagen, forwarder", r.Method, r.URL.Path)
+			proxy.ServeHTTP(w, r)
+			return
 		}
+
+		log.Printf("%s %s -> gamer SOVER, vaekker (mac %s, broadcast %s)", r.Method, r.URL.Path, mac, broadcast)
+		start := time.Now()
+		wake(mac, broadcast)
+		deadline := start.Add(wakeTimeout)
+		for time.Now().Before(deadline) {
+			if reachable(tcpAddr, time.Second) {
+				break
+			}
+			time.Sleep(2 * time.Second)
+			if !reachable(tcpAddr, time.Second) {
+				wake(mac, broadcast)
+			}
+		}
+		if !reachable(tcpAddr, time.Second) {
+			log.Printf("TIMEOUT: gamer vaagnede ikke inden for %s", wakeTimeout)
+			http.Error(w, "gamer did not wake in time", http.StatusGatewayTimeout)
+			return
+		}
+		log.Printf("gamer VAAGEN efter %.0fs, forwarder", time.Since(start).Seconds())
+		time.Sleep(settle)
 		proxy.ServeHTTP(w, r)
 	}
 
-	log.Printf("WoL-Ollama proxy listening on %s -> %s (mac %s, broadcast %s)", listen, target, mac, broadcast)
+	log.Printf("WoL-Ollama proxy lytter paa %s -> %s (mac %s, broadcast %s)", listen, target, mac, broadcast)
 	log.Fatal(http.ListenAndServe(listen, http.HandlerFunc(handler)))
 }
